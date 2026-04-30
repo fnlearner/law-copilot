@@ -1,26 +1,20 @@
 """
-法律条文入库脚本 - 增量版
-跳过已入库的文件，只补未入库的部分
+法律条文入库脚本 - 增量版（基于 vector_sdk）
+
+跳过已入库的文件，只补未入库的部分。
+依赖：backend/vector_sdk.py
 """
 import sys, os, re, logging, time
 from pathlib import Path
-import requests
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from vector_sdk import LawVectorSDK, LawChunk, VectorPoint
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 LAWS_DIR   = Path("/tmp/Laws")
 COLLECTION = "law_copilot_laws"
-DIM        = 1024
-API_TOKEN = os.environ.get("JINA_API_KEY", "") or os.environ.get("EMBEDDING_API_KEY", "")
-if not API_TOKEN:
-    raise RuntimeError("请设置环境变量 JINA_API_KEY 或 EMBEDDING_API_KEY")
-MODEL      = "jina-embeddings-v3"
-BATCH_SIZE = 32
 
 CATEGORY_MAP = {
     "民法典": "civil", "刑法": "criminal", "宪法": "constitutional",
@@ -30,8 +24,9 @@ CATEGORY_MAP = {
     "宪法相关法": "constitutional", "行政法规": "administrative",
 }
 
-ARTICLE_RE   = re.compile(r'^(第[一二三四五六七八九十百零\d]+条)', re.MULTILINE)
-TOTAL_CHUNKS = 148353
+ARTICLE_RE = re.compile(r'^(第[一二三四五六七八九十百零\d]+条)', re.MULTILINE)
+
+# ─── 分块 & metadata（保留原有领域逻辑不动）──────────────────────────────────────
 
 def doc_type(fp: str) -> str:
     for k, v in CATEGORY_MAP.items():
@@ -44,6 +39,7 @@ def law_name(fp: str, text: str) -> str:
     return m.group(1) if m else Path(fp).stem
 
 def chunk_file(fp: Path):
+    """按第X条切分，返回 chunk 列表。"""
     try:
         text = fp.read_text(encoding='utf-8')
     except Exception:
@@ -59,153 +55,133 @@ def chunk_file(fp: Path):
         chunks.append({"content": seg, "art": m.group(1), "ch": "", "name": law_name(str(fp), text)})
     return chunks
 
-def metadata(chunk, fp):
-    return {
-        "content": chunk["content"],                            # ← 修复：必须保存正文
-        "doc_type": doc_type(str(fp)), "file_name": Path(fp).name,
-        "source_file": str(fp), "article_number": chunk["art"],
-        "chapter": chunk["ch"], "law_name": chunk["name"],
-        "char_length": len(chunk["content"]),
-    }
+def make_chunk_id(source_file: str, article_number: str, index: int) -> str:
+    """生成稳定可重入的 chunk ID，用于 upsert 去重。"""
+    sf_hash = str(hash(source_file))[-8:]
+    return f"{sf_hash}_{article_number}_{index}"
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    url = "https://api.jina.ai/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {"model": MODEL, "input": texts}
-    resp = requests.post(url, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()["data"]
-    data.sort(key=lambda x: x["index"])
-    return [item["embedding"] for item in data]
+
+# ─── 主流程 ─────────────────────────────────────────────────────────────────
 
 def main():
+    from dotenv import load_dotenv
+    load_dotenv('.env')
+
     t0 = time.time()
-    client = QdrantClient(host="localhost", port=6333)
 
-    # 检查 collection 是否存在
-    cols = [c.name for c in client.get_collections().collections]
-    if COLLECTION not in cols:
-        logger.info(f"Collection {COLLECTION} 不存在，请先运行完整版脚本")
-        return
+    # 初始化 SDK（自动处理 collection 建表）
+    sdk = LawVectorSDK(collection=COLLECTION, host="localhost", port=6333)
 
-    # 获取已入库的 source_file 列表（用于跳过）
-    existing_sources = set()
-    offset = None
-    while True:
-        result = client.scroll(
-            collection_name=COLLECTION,
-            scroll_filter=None,
-            limit=1000,
-            offset=offset,
-            with_payload=["source_file"],
-        )
-        points, offset = result
-        if not points:
-            break
-        for p in points:
-            sf = p.payload and p.payload.get("source_file")
-            if sf:
-                existing_sources.add(sf)
-        if offset is None:
-            break
-
+    # 增量：读取已有 chunk 的 source_file，跳过已入库文件
+    existing_sources = _load_existing_sources(sdk)
     logger.info(f"已有 {len(existing_sources)} 个文件在 Qdrant 中，将跳过")
 
-    # 获取当前最大 point_id
-    all_ids = client.search(
-        collection_name=COLLECTION,
-        query_vector=[0.0] * DIM,
-        limit=1,
-        search_params={"exact": True},
-    )
-    # 用 scroll 得到最大 id
-    max_id = -1
-    offset = None
-    while True:
-        result = client.scroll(collection_name=COLLECTION, limit=1000, offset=offset)
-        points, offset = result
-        if not points:
-            break
-        for p in points:
-            if p.id > max_id:
-                max_id = p.id
-        if offset is None:
-            break
-    point_id = max_id + 1
-    logger.info(f"从 point_id={point_id} 继续")
-
     # 扫描文件
-    files = list(LAWS_DIR.rglob("*.md"))
-    logger.info(f"文件总数: {len(files)}")
+    all_files = list(LAWS_DIR.rglob("*.md"))
+    files_to_process = [fp for fp in all_files if str(fp) not in existing_sources]
+    logger.info(f"文件总数: {len(all_files)}，需处理: {len(files_to_process)}（跳过 {len(all_files) - len(files_to_process)} 个已入库）")
 
-    # 过滤：只处理未入库的文件
-    files_to_process = [fp for fp in files if str(fp) not in existing_sources]
-    logger.info(f"需处理文件: {len(files_to_process)}（跳过 {len(files) - len(files_to_process)} 个已入库）")
+    if not files_to_process:
+        logger.info("没有新文件需要处理，退出")
+        return
 
-    buf_texts  = []
-    buf_pl      = []
+    # 批量 ingest
+    buf_chunks: list[LawChunk] = []
+    BATCH_SIZE = 64
     total_chunks = 0
     total_files  = 0
     errors       = 0
 
     for fi, fp in enumerate(files_to_process):
-        chunks = chunk_file(fp)
-        if not chunks:
+        file_chunks = chunk_file(fp)
+        if not file_chunks:
             continue
 
         total_files += 1
-        for ch in chunks:
-            buf_texts.append(ch["content"])
-            buf_pl.append(metadata(ch, fp))
+        for idx, ch in enumerate(file_chunks):
+            buf_chunks.append(LawChunk(
+                content=ch["content"],
+                chunk_id=make_chunk_id(str(fp), ch["art"], idx),
+                metadata={
+                    "doc_type": doc_type(str(fp)),
+                    "file_name": fp.name,
+                    "source_file": str(fp),
+                    "article_number": ch["art"],
+                    "chapter": ch["ch"],
+                    "law_name": ch["name"],
+                    "char_length": len(ch["content"]),
+                },
+            ))
 
-        while len(buf_texts) >= BATCH_SIZE:
+        # 凑够一批就 ingest
+        while len(buf_chunks) >= BATCH_SIZE:
             try:
-                vecs = embed_texts(buf_texts[:BATCH_SIZE])
-                client.upsert(collection_name=COLLECTION, points=[
-                    {"id": point_id + j, "vector": vecs[j], "payload": buf_pl[j]}
-                    for j in range(BATCH_SIZE)
-                ])
-                point_id     += BATCH_SIZE
+                sdk.store.upsert(_chunks_to_points(buf_chunks[:BATCH_SIZE]))
                 total_chunks += BATCH_SIZE
-                buf_texts    = buf_texts[BATCH_SIZE:]
-                buf_pl       = buf_pl[BATCH_SIZE:]
+                buf_chunks = buf_chunks[BATCH_SIZE:]
 
                 elapsed = time.time() - t0
                 rate = total_chunks / elapsed if elapsed > 0 else 0
-                remaining = len(files_to_process) - total_files
-                eta = remaining * (elapsed / total_files) / 60 if total_files > 0 else 0
+                eta = (len(files_to_process) - total_files) * (elapsed / total_files) / 60 if total_files > 0 else 0
                 logger.info(f"  [{total_chunks}] +{BATCH_SIZE} | {rate:.1f} chunks/s | ETA {eta:.0f}min | {total_files}/{len(files_to_process)} files")
             except Exception as e:
                 logger.error(f"  upsert 失败: {e}")
-                errors       += 1
-                buf_texts    = buf_texts[BATCH_SIZE:]
-                buf_pl       = buf_pl[BATCH_SIZE:]
-                point_id    += BATCH_SIZE
+                errors += 1
+                buf_chunks = buf_chunks[BATCH_SIZE:]
                 total_chunks += BATCH_SIZE
 
         if fi > 0 and fi % 50 == 0:
             logger.info(f"  [进度] {fi}/{len(files_to_process)} files, {total_chunks} new chunks")
 
-    # 剩余数据
-    if buf_texts:
+    # 剩余不足一批的
+    if buf_chunks:
         try:
-            vecs = embed_texts(buf_texts)
-            client.upsert(collection_name=COLLECTION, points=[
-                {"id": point_id + j, "vector": vecs[j], "payload": buf_pl[j]}
-                for j in range(len(buf_texts))
-            ])
-            total_chunks += len(buf_texts)
+            sdk.store.upsert(_chunks_to_points(buf_chunks))
+            total_chunks += len(buf_chunks)
         except Exception as e:
             logger.error(f"  剩余 upsert 失败: {e}")
+            errors += 1
 
-    info = client.get_collection(COLLECTION)
     elapsed = time.time() - t0
     logger.info("=" * 50)
     logger.info(f"完成! 耗时 {elapsed:.0f}s = {elapsed/60:.1f}min")
-    logger.info(f"新增: {total_files} files, {total_chunks} chunks | Qdrant 总计: {info.points_count} | errors: {errors}")
+    logger.info(f"新增: {total_files} files, {total_chunks} chunks | Qdrant 总计: {sdk.count()} | errors: {errors}")
+
+
+def _load_existing_sources(sdk: LawVectorSDK) -> set[str]:
+    """遍历 Qdrant，收集已有 chunk 的 source_file 集合。"""
+    existing: set[str] = set()
+    offset = None
+    while True:
+        hits, offset = sdk.store.scroll(limit=1000, offset=offset)
+        for h in hits:
+            sf = h.payload.get("source_file")
+            if sf:
+                existing.add(sf)
+        if offset is None:
+            break
+    return existing
+
+
+def _chunks_to_points(chunks: list[LawChunk]) -> list[VectorPoint]:
+    """把 LawChunk 批量向量化并包装成 VectorPoint。"""
+    from vector_sdk import JinaEmbeddingProvider
+    provider = JinaEmbeddingProvider()
+    texts = [c.content for c in chunks]
+    vectors = provider.embed(texts)
+    return [
+        VectorPoint(
+            id=c.as_point_id(),
+            vector=vec,
+            payload={
+                "content": c.content,
+                "chunk_id": c.chunk_id,
+                "metadata": c.metadata,
+            },
+        )
+        for c, vec in zip(chunks, vectors)
+    ]
+
 
 if __name__ == "__main__":
     main()
