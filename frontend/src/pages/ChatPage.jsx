@@ -39,7 +39,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: `您好，我是 **LawCopilot** 法律研究助手。👨‍⚖️\n\n我可以帮您：\n- 🔍 **检索法条** — 快速找到相关法律法规条文\n- 📋 **分析案例** — 基于判例提供类案参考\n- 📝 **生成文书** — 辅助起草法律文书\n- 🎯 **法律研究** — 经济类法律的深度研究\n\n请输入您的法律问题，我会基于法律法规和案例为您进行分析。`,
+      content: `您好，我是 **LawCopilot** 法律研究助手。👨‍⚖️\n\n我可以帮您：\n- 🔍 **检索法条** — 快速找到相关法律法规条文\n- 📋 **分析案例** — 基于判例提供类案参考\n- 📝 **生成文书** — 辅助起草法律文书\n- 🎯 **法律研究** — 各类法律法规的深度研究与分析\n\n请输入您的法律问题，我会基于法律法规和案例为您进行分析。`,
     },
   ])
   const [inputValue, setInputValue] = useState('')

@@ -64,6 +64,7 @@ def chunk_file(fp: Path):
 
 def metadata(chunk, fp):
     return {
+        "content": chunk["content"],                            # ← 修复：必须保存正文
         "doc_type": doc_type(str(fp)), "file_name": Path(fp).name,
         "source_file": str(fp), "article_number": chunk["art"],
         "chapter": chunk["ch"], "law_name": chunk["name"],

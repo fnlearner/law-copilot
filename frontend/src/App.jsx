@@ -114,7 +114,7 @@ export default function App() {
             }}
           >
             <Space direction="vertical" size={4}>
-              <span style={{ color: '#94a3b8', fontSize: 11 }}>经济类法律研究 Agent</span>
+              <span style={{ color: '#94a3b8', fontSize: 11 }}>法律研究 Agent</span>
               <span style={{ color: '#64748b', fontSize: 10 }}>RAG + DeepSeek LLM</span>
             </Space>
           </div>

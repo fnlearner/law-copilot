@@ -1,7 +1,7 @@
 """
 LawCopilot 数据模型定义
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -45,6 +45,22 @@ class ChatRequest(BaseModel):
     scope: SearchScope = Field(SearchScope.ECONOMIC, description="检索范围")
     top_k: int = Field(5, ge=1, le=20, description="检索返回条数")
 
+    @field_validator("scope", mode="before")
+    @classmethod
+    def normalize_scope(cls, v):
+        """兼容前端 'searchScope.ALL' 格式"""
+        if isinstance(v, str):
+            if "." in v:
+                v = v.split(".")[-1].lower()
+            mapping = {
+                "all": SearchScope.ALL,
+                "laws": SearchScope.LAWS,
+                "cases": SearchScope.CASES,
+                "economic": SearchScope.ECONOMIC,
+            }
+            return mapping.get(v.lower(), SearchScope.ECONOMIC)
+        return v
+
 
 class SearchRequest(BaseModel):
     """搜索请求"""
@@ -52,6 +68,22 @@ class SearchRequest(BaseModel):
     scope: SearchScope = Field(SearchScope.ALL)
     top_k: int = Field(5, ge=1, le=20)
     filters: Optional[Dict[str, Any]] = Field(None, description="过滤条件")
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def normalize_scope(cls, v):
+        """兼容前端 'searchScope.ALL' 格式和直接字符串值"""
+        if isinstance(v, str):
+            if "." in v:
+                v = v.split(".")[-1].lower()
+            mapping = {
+                "all": SearchScope.ALL,
+                "laws": SearchScope.LAWS,
+                "cases": SearchScope.CASES,
+                "economic": SearchScope.ECONOMIC,
+            }
+            return mapping.get(v.lower(), SearchScope.ALL)
+        return v
 
 
 class DocumentUploadRequest(BaseModel):
