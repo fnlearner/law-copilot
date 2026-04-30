@@ -1,0 +1,37 @@
+# FastAPI & Web
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# RAG Pipeline
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-openai==0.3.3
+langchain-qdrant==0.2.0
+qdrant-client==1.12.0
+unstructured==0.16.11
+pypdf==5.1.0
+docx2txt==0.8
+markdown==3.7
+html2text==2024.2.26
+jieba==0.42.1
+
+# LLM
+openai==1.58.1
+httpx==0.28.1
+
+# ===== Embedding 模型（⚠️ 专用向量模型，不是 LLM！）=====
+# 推荐：FastEmbed — 基于 Rust ONNX Runtime，极速本地推理，无需 GPU
+fastembed>=0.4.0
+# 备选：sentence-transformers — Python 原生，插件丰富但较慢（按需安装）
+# sentence-transformers>=3.0.0
+
+# Database
+sqlalchemy==2.0.37
+aiosqlite==0.20.0
+
+# Utils
+python-dotenv==1.0.1
+pydantic==2.10.4
+pydantic-settings==2.7.1
+tenacity==9.0.0

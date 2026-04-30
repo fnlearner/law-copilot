@@ -1,0 +1,39 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+
+# ===== Environment =====
+.env
+backend/.env
+
+# ===== Node.js =====
+node_modules/
+frontend/dist/
+frontend/build/
+*.log
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Data (法律数据较大) =====
+data/laws/*.pdf
+data/uploads/*
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Misc =====
+*.bak
+*.tmp
