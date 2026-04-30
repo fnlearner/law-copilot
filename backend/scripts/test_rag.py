@@ -4,11 +4,14 @@ RAG 搜索测试脚本
 直接用 Qdrant 原生客户端 + Jina API 查向量库
 """
 import requests
+import os
 import numpy as np
 from qdrant_client import QdrantClient
 
 # ── 配置 ──
-API_TOKEN = "***REMOVED***"
+API_TOKEN = os.environ.get("JINA_API_KEY", "") or os.environ.get("EMBEDDING_API_KEY", "")
+if not API_TOKEN:
+    raise RuntimeError("请设置环境变量 JINA_API_KEY 或 EMBEDDING_API_KEY")
 MODEL = "jina-embeddings-v3"
 COLLECTION = "law_copilot_laws"
 TOP_K = 5

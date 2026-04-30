@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 LAWS_DIR   = Path("/tmp/Laws")
 COLLECTION = "law_copilot_laws"
 DIM        = 1024
-API_TOKEN  = "***REMOVED***"
+API_TOKEN = os.environ.get("JINA_API_KEY", "") or os.environ.get("EMBEDDING_API_KEY", "")
+if not API_TOKEN:
+    raise RuntimeError("请设置环境变量 JINA_API_KEY 或 EMBEDDING_API_KEY")
 MODEL      = "jina-embeddings-v3"
 BATCH_SIZE = 32  # Jina API 单次最多32条
 

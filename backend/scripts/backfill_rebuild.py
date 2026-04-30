@@ -18,7 +18,9 @@ HOST = "localhost"
 PORT = 6333
 COLLECTION = "law_copilot_laws"
 SOURCE_DIR = Path("/tmp/Laws")
-JINA_TOKEN = "***REMOVED***"
+JINA_TOKEN = os.environ.get("JINA_API_KEY", "") or os.environ.get("EMBEDDING_API_KEY", "")
+if not JINA_TOKEN:
+    raise RuntimeError("请设置环境变量 JINA_API_KEY 或 EMBEDDING_API_KEY")
 MODEL = "jina-embeddings-v3"
 
 _file_cache: dict[str, str] = {}
