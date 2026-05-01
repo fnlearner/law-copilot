@@ -10,6 +10,7 @@ import {
   Card,
   Empty,
   Spin,
+  message,
 } from 'antd'
 import {
   SendOutlined,
@@ -35,8 +36,20 @@ const quickQuestions = [
   '经营者集中申报的门槛是什么？',
 ]
 
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+  references?: Array<{
+    title: string
+    doc_type: string
+    relevance_score: number
+    content_snippet: string
+  }>
+  latency_ms?: number
+}
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
       content: `您好，我是 **LawCopilot** 法律研究助手。👨‍⚖️\n\n我可以帮您：\n- 🔍 **检索法条** — 快速找到相关法律法规条文\n- 📋 **分析案例** — 基于判例提供类案参考\n- 📝 **生成文书** — 辅助起草法律文书\n- 🎯 **法律研究** — 各类法律法规的深度研究与分析\n\n请输入您的法律问题，我会基于法律法规和案例为您进行分析。`,
@@ -68,8 +81,8 @@ export default function ChatPage() {
         top_k: 5,
       })
 
-      const aiMessage = {
-        role: 'assistant',
+      const aiMessage: Message = {
+        role: 'assistant' as const,
         content: response.reply || '抱歉，未能生成回复。',
         references: response.references || [],
         latency_ms: response.latency_ms,
