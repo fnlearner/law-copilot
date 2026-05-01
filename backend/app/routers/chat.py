@@ -71,7 +71,7 @@ async def ask_question(
             meta = chunk.get("metadata", {})
             ref = SourceReference(
                 doc_type=meta.get("doc_type", "unknown"),
-                title=meta.get("file_name", meta.get("title", "未知")),
+                title=meta.get("law_name", meta.get("file_name", "未知法律")),
                 source=meta.get("source_file", ""),
                 content_snippet=chunk["content"][:300] + ("..." if len(chunk["content"]) > 300 else ""),
                 relevance_score=chunk["relevance_score"],

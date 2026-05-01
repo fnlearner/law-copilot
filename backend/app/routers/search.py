@@ -52,9 +52,13 @@ async def search_documents(
         results = []
         for r in raw_results:
             meta = r["metadata"]
+            law_name = meta.get("law_name", "")
+            article_number = meta.get("article_number", "")
+            # 标题优先显示：法律名 + 条文编号
+            title = f"{law_name} {article_number}".strip() if law_name else meta.get("file_name", "未知法律")
             sr = SearchResult(
                 doc_type=meta.get("doc_type", "unknown"),
-                title=meta.get("file_name", meta.get("title", "未知")),
+                title=title,
                 content=r["content"],
                 source=meta.get("source_file", ""),
                 relevance_score=r["relevance_score"],

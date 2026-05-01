@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="LawCopilot API",
-    description="面向执业律师的经济类法律研究 Agent API",
+    description="面向执业律师的法律研究 Agent API",
     version="1.0.0",
     lifespan=lifespan,
 )
