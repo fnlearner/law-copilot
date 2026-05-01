@@ -40,3 +40,8 @@ docker-compose.override.yml
 
 
 frontend-taro
+
+SYSTEM_DESIGN.md
+data
+scripts
+docs

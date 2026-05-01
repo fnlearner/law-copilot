@@ -29,21 +29,19 @@ class Settings(BaseSettings):
     # ===== Qdrant 向量数据库 =====
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
-    QDRANT_COLLECTION: str = "law_copilot_laws"
-    QDRANT_VECTOR_SIZE: int = 1024
+    QDRANT_COLLECTION: str = "laws"
+    QDRANT_VECTOR_SIZE: int = 512
 
     # ===== Embedding 模型 (⚠️ 不是 LLM！是专用向量模型) =====
     # Provider: local(推荐/FastEmbed) / sentence_transformer / openai_api / auto
     EMBEDDING_PROVIDER: str = "local"
     
-    # 本地模型名（Provider=local 时生效，必须在 FastEmbed 白名单内）
-    # ⭐ 推荐(稳定): jinaai/jina-embeddings-v2-base-zh (1024维, 8K上下文, 中英混合)
-    # 轻量: BAAI/bge-small-zh-v1.5 (512维, ~90MB)
-    # 效果最强(需ST): BAAI/bge-m3 (1024维, 8K上下文, 切换到 sentence_transformer)
-    EMBEDDING_MODEL: str = "jinaai/jina-embeddings-v2-base-zh"
+    # 本地模型名（Provider=local 时生效，FastEmbed 白名单内）
+    # ⭐ 推荐: BAAI/bge-small-zh-v1.5 (512维, ~90MB, 中文, 极速)
+    EMBEDDING_MODEL: str = "BAAI/bge-small-zh-v1.5"
     
     # 向量维度（必须与模型匹配，创建 Collection 时用）
-    EMBEDDING_DIMENSIONS: int = 1024
+    EMBEDDING_DIMENSIONS: int = 512
     
     # 云 API 配置（Provider=openai_api 时需要）
     # 推荐用智谱: https://open.bigmodel.cn/api/paas/v4  模型 embedding-3

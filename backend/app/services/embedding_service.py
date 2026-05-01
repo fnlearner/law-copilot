@@ -239,6 +239,8 @@ class SentenceTransformerBackend(EmbeddingBackend):
     """
 
     MODEL_DIMENSIONS = {
+        # ⭐ Qwen3-Embedding（本地，M3 MPS 加速）
+        "Qwen/Qwen3-Embedding-0.6B": 1024,               # ⭐ 默认推荐：中文法律，0.6B
         # ⭐ 中文法律推荐（ST 专用，FastEmbed 不支持这些）
         "BAAI/bge-m3": 1024,                          # 效果最强，8K上下文
         "BAAI/bge-large-zh-v1.5": 1024,               # 经典纯中文
@@ -247,11 +249,19 @@ class SentenceTransformerBackend(EmbeddingBackend):
         "shibing624/text2vec-base-chinese": 768,
     }
 
-    DEFAULT_MODEL = "BAAI/bge-large-zh-v1.5"
+    DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 
-    def __init__(self, model_name: Optional[str] = None, device: str = "cpu"):
+    def __init__(self, model_name: Optional[str] = None, device: Optional[str] = None):
         self._model_name = model_name or self.DEFAULT_MODEL
-        self._device = device
+        # 自动检测 MPS（Apple Silicon GPU）
+        if device is None:
+            try:
+                import torch
+                self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+            except ImportError:
+                self._device = "cpu"
+        else:
+            self._device = device
         self._model = None
         self._dimensions = self.MODEL_DIMENSIONS.get(self._model_name, 768)
 
@@ -436,8 +446,12 @@ class EmbeddingService:
 
     def __init__(self):
         self._backend: Optional[EmbeddingBackend] = None
-        self._provider = getattr(settings, "EMBEDDING_PROVIDER", "auto")
-        self._model_name = getattr(settings, "EMBEDDING_MODEL", "BAAI/bge-m3")
+        self._provider = getattr(settings, "EMBEDDING_PROVIDER", "sentence_transformer")
+        # 使用 Modelscope 本地路径
+        modelscope_path = "/Users/zhuangjs/.cache/modelscope/Qwen/Qwen3-Embedding-0.6B"
+        self._model_name = getattr(settings, "EMBEDDING_MODEL", modelscope_path)
+        if self._model_name == "Qwen/Qwen3-Embedding-0.6B":
+            self._model_name = modelscope_path
         self._initialized = False
 
     async def initialize(self):
