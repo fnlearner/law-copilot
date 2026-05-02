@@ -13,6 +13,7 @@ from app.models.schemas import (
 )
 from app.services.rag_service import RAGService
 from app.config import settings
+from app.utils.metadata import build_title
 
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ async def ask_question(
             meta = chunk.get("metadata", {})
             ref = SourceReference(
                 doc_type=meta.get("doc_type", "unknown"),
-                title=meta.get("law_name", meta.get("file_name", "未知法律")),
+                title=build_title(meta),
                 source=meta.get("source_file", ""),
                 content_snippet=chunk["content"][:300] + ("..." if len(chunk["content"]) > 300 else ""),
                 relevance_score=chunk["relevance_score"],

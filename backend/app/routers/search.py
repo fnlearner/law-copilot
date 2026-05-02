@@ -10,6 +10,7 @@ from typing import Optional
 from app.models.schemas import SearchRequest, SearchResult, SearchResponse, SearchScope
 from app.services.rag_service import RAGService
 from app.config import settings
+from app.utils.metadata import build_title
 
 
 logger = logging.getLogger(__name__)
@@ -52,10 +53,7 @@ async def search_documents(
         results = []
         for r in raw_results:
             meta = r["metadata"]
-            law_name = meta.get("law_name", "")
-            article_number = meta.get("article_number", "")
-            # 标题优先显示：法律名 + 条文编号
-            title = f"{law_name} {article_number}".strip() if law_name else meta.get("file_name", "未知法律")
+            title = build_title(meta)
             sr = SearchResult(
                 doc_type=meta.get("doc_type", "unknown"),
                 title=title,
