@@ -426,7 +426,6 @@ class RAGService:
         # 2. 精确字段匹配（返回后直接当 top-1）
         if has_exact and law_name:
             try:
-                from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue
                 must = []
                 if law_name:
                     must.append(FieldCondition(key="law_name", match=MatchValue(value=law_name)))
@@ -436,7 +435,7 @@ class RAGService:
                 exact_records, _ = self.qdrant_client.scroll(
                     collection_name=settings.QDRANT_COLLECTION,
                     limit=3,
-                    scroll_filter=QFilter(must=must),
+                    scroll_filter=Filter(must=must),
                     with_payload=True,
                     with_vectors=False,
                 )
@@ -519,6 +518,7 @@ class RAGService:
         context_chunks: List[Dict[str, Any]],
         task_type: str = "legal_research",
         chat_history: Optional[List[Dict[str, str]]] = None,
+        key_facts: Optional[List[str]] = None,
     ) -> str:
         """基于检索上下文 + LLM 生成回答（自动适配领域）"""
         # 检测领域，选择对应 Prompt
@@ -551,8 +551,16 @@ class RAGService:
             context_text += chunk["content"]
             context_text += f"\n[相关度: {chunk['relevance_score']:.2f}]\n"
 
+        # 已提取的关键法律事实（压缩后的上下文）
+        key_facts_text = ""
+        if key_facts:
+            key_facts_text = "\n".join(f"- {f}" for f in key_facts)
+
         user_prompt = f"""## 用户问题
 {question}
+
+## 已讨论的关键法律事实（如有）
+{key_facts_text if key_facts_text else "（首轮对话，无历史关键事实）"}
 
 ## 相关法律法规/案例（已通过语义检索找到以下最相关的条文）
 {context_text if context_text else "未检索到高度相关的法律资料，请基于你的法律知识谨慎回答。"}
@@ -569,14 +577,63 @@ class RAGService:
 
         if chat_history:
             for turn in chat_history[-12:]:
-                messages.append(tuple(turn.items()))
+                role = turn.get("role", "human")
+                content = turn.get("content", "")
+                messages.append((role, content))
 
         response = await self.llm.ainvoke(messages)
         return response.content
 
     # ================================================================
-    # 工具方法
+    # 关键事实提取（compress context）
     # ================================================================
+
+    EXTRACT_PROMPT_TEMPLATE = """你是一个法律助手。从以下对话中提取关键法律事实（条款号、罪名、刑期、认定标准、争议焦点等），用简洁的中文短句陈述。
+
+对话：
+人类：{human}
+助手：{ai}
+
+提取规则：
+- 只提取与法律相关的信息（罪名、法条编号、刑期幅度、认定标准、情节轻重等）
+- 每条不超过20字
+- 不重复之前已提取的事实
+- 无法提取时返回"无"
+- 最多提取5条
+
+输出格式（直接输出条目，逗号/换行分隔，不要其他解释）：
+"""
+
+    async def extract_key_facts(
+        self,
+        human_msg: str,
+        ai_msg: str,
+        key_facts_list: List[str],
+    ) -> None:
+        """用 LLM 从本轮对话中提取关键法律事实，追加到 key_facts_list。"""
+        try:
+            prompt = self.EXTRACT_PROMPT_TEMPLATE.format(
+                human=human_msg[:500],
+                ai=ai_msg[:1000],
+            )
+            response = await self.llm.ainvoke([("human", prompt)])
+            raw = response.content.strip()
+
+            # 解析：支持换行分隔或逗号分隔
+            lines = []
+            if "\n" in raw:
+                lines = raw.split("\n")
+            else:
+                lines = [l.strip() for l in raw.split("，") if l.strip()]
+
+            for line in lines:
+                line = line.strip().lstrip("0123456789.、、-– ")
+                if line and line not in key_facts_list and line != "无":
+                    key_facts_list.append(line)
+
+            logger.info(f"🔑 关键事实提取 +{len(lines)} 条，累计 {len(key_facts_list)} 条")
+        except Exception as e:
+            logger.warning(f"关键事实提取失败（不影响回复）: {e}")
 
     def _detect_doc_type(self, filename: str) -> str:
         """根据文件名检测文档类型"""

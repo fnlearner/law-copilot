@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # ===== 数据库 (SQLite) =====
     DATABASE_URL: str = "sqlite+aiosqlite:///./law_copilot.db"
 
+    # ===== 裁判文书搜索 (SQLite FTS5) =====
+    CAIL_DB_PATH: str = "/tmp/cail2018_fts.db"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

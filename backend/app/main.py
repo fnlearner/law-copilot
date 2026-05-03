@@ -10,17 +10,26 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.routers import chat, search, document
 from app.services.rag_service import RAGService
+from app.services.judgment_service import JudgmentSearchService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # 启动时初始化RAG服务
+    # 启动时初始化 RAG 服务（Qdrant 法条检索）
     app.state.rag_service = RAGService()
     await app.state.rag_service.initialize()
+
+    # 启动时初始化裁判文书搜索服务（SQLite FTS5 BM25）
+    app.state.judgment_service = JudgmentSearchService(
+        db_path=settings.CAIL_DB_PATH,
+    )
+    await app.state.judgment_service.initialize()
+
     yield
+
     # 关闭时清理资源
     await app.state.rag_service.shutdown()
+    await app.state.judgment_service.shutdown()
 
 
 app = FastAPI(

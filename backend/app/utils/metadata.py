@@ -36,6 +36,11 @@ def build_title(meta: dict, fallback: str = "未知法律") -> str:
     if file_name:
         return file_name
 
+    # 裁判文书（accusation）
+    accusation = meta.get("accusation", "")
+    if accusation:
+        return f"{accusation}案"
+
     return fallback
 
 

@@ -23,7 +23,7 @@ const menuItems = [
   {
     key: 'search',
     icon: <SearchOutlined />,
-    label: '法条检索',
+    label: '信息检索',
   },
   {
     key: 'document',

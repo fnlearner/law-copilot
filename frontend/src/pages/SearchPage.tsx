@@ -30,7 +30,7 @@ const { Search } = Input
 
 export default function SearchPage() {
   const [query, setQuery] = useState('')
-  const [scope, setScope] = useState('searchScope.ALL')
+  const [scope, setScope] = useState('searchScope.LAWS')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [suggestions, setSuggestions] = useState([])
@@ -142,7 +142,7 @@ export default function SearchPage() {
               style={{ width: 160 }}
               size="large"
               options={[
-                { value: 'searchScope.ALL', label: '全部类型' },
+                // { value: 'searchScope.ALL', label: '全部类型' },
                 { value: 'searchScope.LAWS', label: '仅法律法规' },
                 { value: 'searchScope.CASES', label: '仅判例案例' },
                 { value: 'searchScope.ECONOMIC', label: '经济类优先' },
