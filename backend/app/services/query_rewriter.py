@@ -55,6 +55,44 @@ LEGAL_CONCEPTS = [
     "强制执行", "仲裁", "调解",
 ]
 
+# ===== 主题 → 扩展搜索词 =====
+TOPIC_EXPANSION = {
+    # 装修/噪音
+    "装修": ["装修", "噪音", "施工", "环境噪声污染防治法", "物业管理", "装修管理", "住宅室内装饰装修"],
+    "噪音": ["噪音", "环境噪声", "装修", "施工", "环境噪声污染防治法"],
+    "五一": ["节假日", "法定节假日", "装修", "噪音", "休息日"],
+    "节假日装修": ["节假日", "装修", "噪音", "法定节假日", "禁止施工"],
+    
+    # 劳动/工资
+    "加班": ["加班", "加班费", "劳动法", "工资支付"],
+    "工资": ["工资", "工资支付", "劳动法"],
+    "辞退": ["辞退", "解除劳动合同", "经济补偿", "劳动法"],
+    "社保": ["社保", "社会保险", "五险一金"],
+    
+    # 房产/物业
+    "租房": ["租房", "租赁", "房屋租赁", "合同法", "民法典"],
+    "物业": ["物业", "物业管理", "物业费"],
+    
+    # 交通
+    "交通事故": ["交通事故", "交通肇事", "赔偿", "侵权"],
+    "违章": ["违章", "交通违章", "扣分", "罚款"],
+    
+    # 婚姻家庭
+    "离婚": ["离婚", "婚姻", "民法典", "财产分割", "抚养权"],
+    "继承": ["继承", "遗产", "遗嘱", "民法典"],
+    
+    # 合同
+    "合同纠纷": ["合同纠纷", "违约", "合同解除", "民法典"],
+    
+    # 消费维权
+    "退货": ["退货", "消费者权益", "三包", "消费者权益保护法"],
+    "消费纠纷": ["消费", "消费者权益保护法", "三包", "赔偿"],
+    
+    # 行政
+    "罚款": ["罚款", "行政处罚", "处罚"],
+    "行政复议": ["行政复议", "行政诉讼", "复议"],
+}
+
 # ===== 查询重写 =====
 
 class QueryRewriter:
@@ -157,13 +195,19 @@ class QueryRewriter:
 
     @staticmethod
     def _extract_legal_terms(query: str) -> List[str]:
-        """提取核心法律概念"""
+        """提取核心法律概念（含主题扩展）"""
         found = []
-        # 先长匹配
+        # 先长匹配 LEGAL_CONCEPTS
         for concept in sorted(LEGAL_CONCEPTS, key=len, reverse=True):
             if concept in query:
                 found.append(concept)
-        return found[:3]
+
+        # 再匹配 TOPIC_EXPANSION 主题词
+        for topic, expansions in sorted(TOPIC_EXPANSION.items(), key=lambda x: -len(x[0])):
+            if topic in query:
+                found.extend(expansions)
+
+        return found[:6]
 
     @staticmethod
     def _expand_query(info: Dict) -> List[str]:
@@ -173,13 +217,23 @@ class QueryRewriter:
         article = info["article_number"]
 
         if law and article:
-            # 精确检索
             queries.append(f"{law} {article}")
             queries.append(f"{law} 第{info['article_index']}条")
         elif law:
             queries.append(f"{law}")
             for term in info["legal_terms"]:
                 queries.append(f"{law} {term}")
+
+        # 主题扩展子查询（针对无精确法条引用的问题）
+        if not info["has_exact_ref"]:
+            terms = info["legal_terms"]
+            if terms:
+                # 核心概念单独作为子查询
+                for term in terms[:3]:
+                    queries.append(f"{term}")
+                # 组合查询
+                if len(terms) >= 2:
+                    queries.append(f"{' '.join(terms[:3])} 法律规定")
 
         return list(set(queries))
 
