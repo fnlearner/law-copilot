@@ -1,6 +1,6 @@
 # LawCopilot - 法律研究助手
 
-面向执业律师的法律研究 RAG + LLM 系统，支持法条检索、案例分析、法律文书生成。
+面向执业律师的法律研究 RAG + LLM 系统，支持法条语义检索、判例 BM25 检索、法律问答（多轮对话）。
 
 ![LawCopilot 界面](Snipaste_2026-04-30_23-24-26.png)
 ![法条检索](Snipaste_2026-04-30_23-24-47.png)
@@ -51,6 +51,7 @@ cp .env.example .env
 | `EMBEDDING_PROVIDER` | 向量化方案（local/auto） | `local` |
 | `EMBEDDING_MODEL` | 本地向量模型（FastEmbed 白名单） | `BAAI/bge-small-zh-v1.5` |
 | `EMBEDDING_DIMENSIONS` | 向量维度 | `512` |
+| `CAIL_DB_PATH` | 判例数据库路径（SQLite FTS5） | `/tmp/cail2018_fts.db` |
 
 ### 4. 安装后端依赖并启动
 
@@ -64,7 +65,7 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 
 # 启动后端服务
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 5. 安装前端依赖并启动
@@ -116,6 +117,10 @@ uv run python scripts/migrate_vectors.py
 
 前端「文档管理」页面支持上传 PDF/Word/Markdown/TXT 文件，自动清洗、分块、向量化入库。
 
+### 方式四：判例数据（CAIL2018）
+
+裁判文书数据使用 SQLite FTS5 BM25 检索，入库脚本位于 `scripts/` 目录。
+
 ## 项目结构
 
 ```
@@ -128,36 +133,37 @@ law-copilot/
 │   │   │   ├── schemas.py       # Pydantic 基础数据模型
 │   │   │   └── enhanced.py      # 增强数据模型（AtomicLegalKnowledge 等）
 │   │   ├── routers/
-│   │   │   ├── chat.py          # 对话接口
-│   │   │   ├── search.py        # 检索接口
-│   │   │   └── document.py      # 文档管理接口
+│   │   │   ├── chat.py          # 对话接口（含多轮上下文）
+│   │   │   ├── search.py        # 检索接口（法条+判例）
+│   │   │   └── document.py     # 文档管理接口
 │   │   └── services/
-│   │       ├── rag_service.py         # RAG 核心服务（三领域Prompt+双路检索）
+│   │       ├── rag_service.py         # RAG 核心服务（三领域Prompt+双路检索+关键事实提取）
 │   │       ├── embedding_service.py   # 向量化服务（FastEmbed/MPS）
 │   │       ├── collection_manager.py  # Qdrant 多集合管理器
 │   │       ├── query_rewriter.py      # 法律查询重写（提取法名+条文号）
 │   │       ├── retriever_service.py   # 三路检索器（BM25+语义+字段）
 │   │       ├── reranker_service.py    # BGE-Reranker 重排序服务
+│   │       ├── judgment_service.py     # 判例检索服务（SQLite FTS5 BM25）
 │   │       └── knowledge_extractor.py # 原子知识提取（LLM）
 │   ├── scripts/
 │   │   ├── flk_scraper.py            # FLK 国家法律法规库爬虫
-│   │   ├── migrate_vectors.py        # Qdrant 存量向量迁移
-│   │   ├── extract_knowledge.py      # 全量原子知识提取
-│   │   ├── update_knowledge.py       # 增量知识更新
-│   │   └── test_search.py            # 检索效果测试
+│   │   ├── migrate_vectors.py         # Qdrant 存量向量迁移
+│   │   ├── extract_knowledge.py       # 全量原子知识提取
+│   │   ├── update_knowledge.py        # 增量知识更新
+│   │   └── test_search.py             # 检索效果测试
 │   ├── data/
 │   │   └── laws_flk/                 # FLK 爬取数据（按分类目录）
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx
-│   │   ├── main.jsx
+│   │   ├── App.tsx
+│   │   ├── main.tsx
 │   │   ├── pages/
-│   │   │   ├── ChatPage.jsx    # 法律问答
-│   │   │   ├── SearchPage.jsx  # 法条检索
-│   │   │   └── DocumentPage.jsx # 文档管理
-│   │   └── services/api.js
+│   │   │   ├── ChatPage.tsx    # 法律问答（多轮对话）
+│   │   │   ├── SearchPage.tsx  # 法条检索
+│   │   │   └── DocumentPage.tsx # 文档管理
+│   │   └── services/api.ts
 │   ├── package.json
 │   └── pnpm-lock.yaml
 └── README.md
@@ -180,35 +186,47 @@ law-copilot/
   │
   ▼
 ③ 双路检索
-   ├─ 精确字段匹配 → ⭐ 高优先级（精确命中法条+条文号）
-   └─ 语义向量检索 → FastEmbed + Qdrant COSINE 搜索
+   ├─ 法条检索 → Qdrant 语义向量（FastEmbed COSINE）
+   └─ 判例检索 → SQLite FTS5 BM25（CAIL2018 170万裁判文书）
   │
   ▼
 ④ 去重融合 + 重排序
   │
   ▼
 ⑤ LLM 生成（DeepSeek + 领域 Prompt）
+  │
+  ▼
+⑥ 关键事实提取（每轮对话后异步提取，累积到 key_facts）
+  └─ 下轮对话时 key_facts 注入 prompt「已讨论的关键法律事实」区块
+```
+
+## 多轮对话与上下文压缩
+
+每次对话后，系统异步调用 LLM 从对话中提取关键法律事实（罪名、法条编号、刑期幅度、认定标准等），累积到 session 级别的 `key_facts` 列表。下轮对话时，已提取的关键事实会注入 prompt，使 LLM 能感知跨轮次的法律上下文，同时避免原始对话历史膨胀。
+
+```
+会话 1：故意伤害罪怎么判？
+  → 提取：故意伤害罪依据刑法第234条 / 轻伤刑期三年以下 / 重伤刑期三到十年 ...
+会话 2：轻伤呢？
+  → prompt 注入：已讨论的关键法律事实：
+    - 故意伤害罪依据刑法第234条
+    - 轻伤刑期三年以下
+    ...
+会话 3：那重伤呢？
+  → 同上上下文，LLM 可区分轻伤/重伤概念
 ```
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | React 18 + Ant Design 5 + Vite 6 |
-| 后端 | Python 3.11 + FastAPI |
-| 向量数据库 | Qdrant v1.12 |
-| Embedding | **FastEmbed ONNX** (bge-small-zh-v1.5, 512维) |
+| 前端 | React 18 + TypeScript + Ant Design 5 + Vite 6 |
+| 后端 | Python 3.11 + FastAPI + Uvicorn |
+| 法条检索 | Qdrant v1.12 + FastEmbed ONNX (bge-small-zh-v1.5, 512维) |
+| 判例检索 | SQLite FTS5 BM25（CAIL2018 170万裁判文书） |
 | LLM | DeepSeek `deepseek-chat` |
 | 重排序 | Jina Reranker API |
 | 文档处理 | LangChain + Unstructured |
-
-### Embedding 方案选择
-
-| 方案 | 维度 | 速度 | 依赖 | 推荐场景 |
-|------|------|------|------|----------|
-| ✅ FastEmbed (ONNX) | 512 | ~3000条/s | fastembed | **默认推荐，稳定高效** |
-| SentenceTransformer | 1024 | ~200条/s | torch+transformers | 需要更大模型时备用 |
-| Jina AI API | 1024 | 取决于网络 | requests+API Key | 云端/无需本地模型时 |
 
 ## 环境变量参考
 
@@ -228,6 +246,9 @@ EMBEDDING_DIMENSIONS=512
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION=laws
+
+# 判例数据库（SQLite FTS5）
+CAIL_DB_PATH=/tmp/cail2018_fts.db
 
 # RAG 参数
 TOP_K=5
